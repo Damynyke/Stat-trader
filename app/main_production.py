@@ -1,6 +1,7 @@
-"""FastAPI application with database, payments, and compliance."""
+﻿"""FastAPI application with database, payments, compliance, and authentication."""
 import asyncio
 import os
+import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
@@ -12,7 +13,12 @@ from .database import PlayerDB, WalletDB, TradeDB, TransactionDB, UserProfileDB,
 from .db import get_session, init_db
 from .payment import PaystackPaymentService, PaystackWebhookHandler
 from .compliance import KYCService, AMLService, ComplianceMiddleware
+from .auth_routes import router as auth_router
+from .statsbomb_client import get_statsbomb_client, LiveDataFeed
 from typing import Dict, List
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Football Trading Platform - Production Ready")
 
@@ -63,7 +69,7 @@ async def pricing_callback(stat: StatUpdate):
 def seed_initial_players(session: Session):
     """Initialize database with sample players."""
     sample_players = [
-        ("40890", "K. Mbappé", 1000.0),
+        ("40890", "K. MbappÃ©", 1000.0),
         ("20055", "L. Messi", 1000.0),
         ("40091", "K. De Bruyne", 1000.0),
         ("5203", "V. van Dijk", 1000.0),
@@ -536,3 +542,77 @@ async def get_positions(user_id: str, session: Session = Depends(get_session)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+
+# ============ Include Auth Router ============
+app.include_router(auth_router)
+
+
+# ============ StatsBomb Live Feed Control ============
+
+live_feed = None
+
+@app.post("/live/start")
+async def start_live_feed(match_id: int = 8658):
+    """Start streaming live data from a StatsBomb match (default: 2018 World Cup Final)"""
+    global live_feed, pricing_engine
+    
+    if live_feed and live_feed._running:
+        return {"status": "already running", "match_id": live_feed.current_match_id}
+    
+    client = get_statsbomb_client()
+    live_feed = LiveDataFeed(client, pricing_engine, broadcast)
+    await live_feed.start(match_id)
+    
+    return {"status": "started", "match_id": match_id}
+
+
+@app.post("/live/stop")
+async def stop_live_feed():
+    """Stop the live data feed"""
+    global live_feed
+    
+    if live_feed:
+        await live_feed.stop()
+        return {"status": "stopped"}
+    
+    return {"status": "not running"}
+
+
+@app.get("/live/status")
+async def live_feed_status():
+    """Get current live feed status"""
+    global live_feed
+    
+    if live_feed and live_feed._running:
+        return {
+            "running": True,
+            "match_id": live_feed.current_match_id,
+            "events_processed": live_feed.event_index,
+            "total_events": len(live_feed.events)
+        }
+    
+    return {"running": False}
+
+
+@app.get("/statsbomb/competitions")
+async def get_competitions():
+    """Get available StatsBomb competitions"""
+    client = get_statsbomb_client()
+    try:
+        competitions = await client.get_competitions()
+        return competitions[:20]  # Return first 20
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/statsbomb/matches/{competition_id}/{season_id}")
+async def get_matches(competition_id: int, season_id: int):
+    """Get matches for a competition/season"""
+    client = get_statsbomb_client()
+    try:
+        matches = await client.get_matches(competition_id, season_id)
+        return matches[:20]  # Return first 20
+    except Exception as e:
+        return {"error": str(e)}

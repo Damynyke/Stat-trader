@@ -8,6 +8,8 @@ export function useWebSocket(url) {
   const reconnectTimeoutRef = useRef(null)
 
   const connect = useCallback(() => {
+    if (!url) return
+
     try {
       const ws = new WebSocket(url)
       wsRef.current = ws
@@ -35,11 +37,12 @@ export function useWebSocket(url) {
       ws.onclose = () => {
         console.log('WebSocket disconnected')
         setIsConnected(false)
-        // Attempt to reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('Attempting to reconnect...')
-          connect()
-        }, 3000)
+        if (url) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('Attempting to reconnect...')
+            connect()
+          }, 3000)
+        }
       }
     } catch (e) {
       console.error('Failed to create WebSocket:', e)
@@ -48,7 +51,12 @@ export function useWebSocket(url) {
   }, [url])
 
   useEffect(() => {
-    connect()
+    if (url) {
+      connect()
+    } else {
+      setIsConnected(false)
+      setLastMessage(null)
+    }
 
     return () => {
       if (reconnectTimeoutRef.current) {
@@ -58,7 +66,7 @@ export function useWebSocket(url) {
         wsRef.current.close()
       }
     }
-  }, [connect])
+  }, [connect, url])
 
   const sendMessage = useCallback((message) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {

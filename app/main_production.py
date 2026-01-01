@@ -1,4 +1,4 @@
-﻿"""FastAPI application with database, payments, compliance, and authentication."""
+"""FastAPI application with database, payments, compliance, and authentication."""
 import asyncio
 import os
 import logging
@@ -69,7 +69,7 @@ async def pricing_callback(stat: StatUpdate):
 def seed_initial_players(session: Session):
     """Initialize database with sample players."""
     sample_players = [
-        ("40890", "K. MbappÃ©", 1000.0),
+        ("40890", "K. Mbappé", 1000.0),
         ("20055", "L. Messi", 1000.0),
         ("40091", "K. De Bruyne", 1000.0),
         ("5203", "V. van Dijk", 1000.0),
@@ -205,8 +205,8 @@ async def ws_prices(ws: WebSocket):
 
 # ============ KYC/AML Endpoints ============
 
-@app.post("/auth/register")
-async def register(user_id: str, email: str, session: Session = Depends(get_session)):
+@app.post("/kyc/register")
+async def kyc_register(user_id: str, email: str, session: Session = Depends(get_session)):
     """Register new user and initiate KYC."""
     result = KYCService.verify_user(user_id, email, session)
     return result
@@ -616,3 +616,4 @@ async def get_matches(competition_id: int, season_id: int):
         return matches[:20]  # Return first 20
     except Exception as e:
         return {"error": str(e)}
+

@@ -617,3 +617,96 @@ async def get_matches(competition_id: int, season_id: int):
     except Exception as e:
         return {"error": str(e)}
 
+
+
+
+# ============ API-Football Live Data Integration ============
+from .api_football_client import get_api_football_client, LiveMatchFeed
+
+api_football_feed = None
+
+@app.get("/api-football/live")
+async def get_live_matches():
+    """Get all currently live matches from API-Football"""
+    client = get_api_football_client()
+    try:
+        matches = await client.get_live_fixtures()
+        return [{"fixture_id": m.fixture_id, "home": m.home_team, "away": m.away_team, 
+                 "score": f"{m.home_score}-{m.away_score}", "elapsed": m.elapsed, 
+                 "league": m.league, "status": m.status} for m in matches]
+    except Exception as e:
+        return {"error": str(e), "hint": "Check your RapidAPI key"}
+
+@app.get("/api-football/fixture/{fixture_id}/events")
+async def get_fixture_events(fixture_id: int):
+    """Get events for a specific fixture"""
+    client = get_api_football_client()
+    try:
+        events = await client.get_fixture_events(fixture_id)
+        return [{"player": e.player_name, "team": e.team, "type": e.event_type, 
+                 "minute": e.minute, "detail": e.detail} for e in events]
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api-football/fixture/{fixture_id}/stats")
+async def get_fixture_player_stats(fixture_id: int):
+    """Get player statistics for a fixture"""
+    client = get_api_football_client()
+    try:
+        stats = await client.get_fixture_statistics(fixture_id)
+        return stats
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api-football/track")
+async def start_tracking(fixture_ids: List[int] = None):
+    """Start tracking live fixtures for price updates"""
+    global api_football_feed, pricing_engine
+    
+    if api_football_feed and api_football_feed._running:
+        return {"status": "already running"}
+    
+    client = get_api_football_client()
+    api_football_feed = LiveMatchFeed(client, pricing_engine, broadcast, poll_interval=60)
+    await api_football_feed.start(fixture_ids)
+    
+    return {"status": "tracking started", "fixtures": fixture_ids or "all live matches"}
+
+@app.post("/api-football/stop")
+async def stop_tracking():
+    """Stop tracking live fixtures"""
+    global api_football_feed
+    
+    if api_football_feed:
+        await api_football_feed.stop()
+        api_football_feed = None
+        return {"status": "stopped"}
+    
+    return {"status": "not running"}
+
+@app.get("/api-football/search/{player_name}")
+async def search_player(player_name: str):
+    """Search for a player by name"""
+    client = get_api_football_client()
+    try:
+        results = await client.search_players(player_name)
+        return [{"id": r["player"]["id"], "name": r["player"]["name"], 
+                 "team": r["statistics"][0]["team"]["name"] if r.get("statistics") else "Unknown",
+                 "photo": r["player"]["photo"]} for r in results[:10]]
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api-football/today")
+async def get_today_matches(league_id: int = None):
+    """Get today fixtures (optional: filter by league)"""
+    client = get_api_football_client()
+    try:
+        fixtures = await client.get_today_fixtures(league_id)
+        return [{"fixture_id": f["fixture"]["id"], 
+                 "home": f["teams"]["home"]["name"], 
+                 "away": f["teams"]["away"]["name"],
+                 "time": f["fixture"]["date"],
+                 "league": f["league"]["name"]} for f in fixtures[:20]]
+    except Exception as e:
+        return {"error": str(e)}
+
